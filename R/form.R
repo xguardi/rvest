@@ -52,7 +52,7 @@ convert_enctype <- function(x) {
   if (x == "multipart/form-data") return("multipart")
 
   warning("Unknown enctype (", x, "). Defaulting to form encoded.",
-    call. = FALSE)
+          call. = FALSE)
   "form"
 }
 
@@ -77,10 +77,10 @@ parse_fields <- function(form) {
 
   fields <- lapply(raw, function(x) {
     switch(xml2::xml_name(x),
-      textarea = parse_textarea(x),
-      input = parse_input(x),
-      select = parse_select(x),
-      button = parse_button(x)
+           textarea = parse_textarea(x),
+           input = parse_input(x),
+           select = parse_select(x),
+           button = parse_button(x)
     )
   })
   names(fields) <- pluck(fields, "name")
@@ -227,7 +227,7 @@ set_values <- function(form, ...) {
   no_match <- setdiff(names(new_values), names(form$fields))
   if (length(no_match) > 0) {
     stop("Unknown field names: ", paste(no_match, collapse = ", "),
-      call. = FALSE)
+         call. = FALSE)
   }
 
   for (field in names(new_values)) {
@@ -270,56 +270,69 @@ submit_form <- function(session, form, submit = NULL, ...) {
     request_GET(session, url = url, query = request$values, ...)
   } else if (request$method == "POST") {
     request_POST(session, url = url, body = request$values,
-      encode = request$encode, ...)
+                 encode = request$encode, ...)
   } else {
     stop("Unknown method: ", request$method, call. = FALSE)
   }
 }
 
-submit_request <- function(form, submit = NULL) {
-  is_submit <- function(x) tolower(x$type) %in% c("submit", "image", "button")
 
-  submits <- Filter(is_submit, form$fields)
-  if (length(submits) == 0) {
-    stop("Could not find possible submission target.", call. = FALSE)
-  }
+submit_request <-
+  function (form, submit = NULL)
+  {
+    submits <- Filter(function(x) {
+      identical(tolower(x$type), "submit")
+    }, form$fields)
 
-  if (is.null(submit)) {
-    submit <- names(submits)[[1]]
-    message("Submitting with '", submit, "'")
-  }
-  if (!(submit %in% names(submits))) {
-    stop(
-      "Unknown submission name '", submit, "'.\n",
-      "Possible values: ", paste0(names(submits), collapse = ", "),
-      call. = FALSE
+    nsubmits <- Filter(function(x) {
+      !identical(tolower(x$type), "submit")
+    }, form$fields)
+
+    # if list take name and vakue as inputs
+    if (is.list(submit)) {
+      submits[[1]]$name  <- names(submit)[1]
+      submits[[1]]$value <- submit[[1]]
+      submit <- submits[[1]]
+    }
+
+    # if character filter by name
+    if (is.character(submit)){
+      submit <- Filter(function(x){x$name==submit},submits)[[1]]
+    }
+
+    # if null choose first
+    if (is.null(submit)) {
+      submit <- submits[[1]]
+      message("Submitting with '", submit$name, "'")
+    }
+
+    # handle method
+    method <- form$method
+    if (!(method %in% c("POST", "GET"))) {
+      warning("Invalid method (", method, "), defaulting to GET",
+              call. = FALSE)
+      method <- "GET"
+    }
+
+    # url
+    url <- form$url
+
+    # fields
+    fields <- nsubmits
+    fields[submit$name] <- list(submit)
+    fields <- Filter(function(x) length(x$value) > 0, fields)
+    values <- rvest::pluck(fields, "value")
+    names(values) <- names(fields)
+
+    # return
+    list(
+      method = method,
+      encode = form$enctype,
+      url = url,
+      values = values
     )
   }
-  other_submits <- setdiff(names(submits), submit)
 
-  # Parameters needed for http request -----------------------------------------
-  method <- form$method
-  if (!(method %in% c("POST", "GET"))) {
-    warning("Invalid method (", method, "), defaulting to GET", call. = FALSE)
-    method <- "GET"
-  }
-
-  url <- form$url
-
-  fields <- form$fields
-  fields <- Filter(function(x) length(x$value) > 0, fields)
-  fields <- fields[setdiff(names(fields), other_submits)]
-
-  values <- pluck(fields, "value")
-  names(values) <- names(fields)
-
-  list(
-    method = method,
-    encode = form$enctype,
-    url = url,
-    values = values
-  )
-}
 
 #' Make link to google form given id
 #'
